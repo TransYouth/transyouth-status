@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>跨青年 Trans Youth 状态页</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="icon" href="https://transyouth.xyz/favicon.ico">
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <main class="max-w-4xl mx-auto p-6">
+    <header class="mb-6">
+      <h1 class="text-2xl font-semibold">跨青年 Trans Youth 状态页</h1>
+      <p class="text-sm text-gray-600">最近 24 小时状态概览 · 数据每 5 分钟更新</p>
+    </header>
+
+    <section id="list" class="space-y-4"></section>
+
+    <footer class="mt-6 text-sm text-gray-500">数据来源：GitHub Actions 探活 · 更新时间：<span id="updated">—</span></footer>
+  </main>
+
+  <script>
+    function pct(arr) {
+      if (!arr.length) return 0
+      const ok = arr.filter(x => x.status === 'ok').length
+      return Math.round((ok / arr.length) * 100)
+    }
+    function avgRtt(arr) {
+      const vals = arr.map(x => x.rtt).filter(Boolean)
+      if (!vals.length) return null
+      return Math.round(vals.reduce((a,b)=>a+b,0)/vals.length)
+    }
+    async function render() {
+      try {
+        const res = await fetch('/status.json', { cache: 'no-store' })
+        const data = await res.json()
+        document.getElementById('updated').textContent = new Date(data.updatedAt).toLocaleString()
+        const list = document.getElementById('list')
+        list.innerHTML = data.services.map(s => {
+          const history = s.history || []
+          const uptime = pct(history)
+          const rtt = avgRtt(history)
+          const latest = history[history.length-1] || {}
+          const badgeColor = latest.status === 'ok' ? 'bg-green-100 text-green-800' : (latest.status === 'degraded' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800')
+          return `
+            <article class="p-4 bg-white rounded-lg shadow-sm border flex items-center justify-between">
+              <div>
+                <div class="font-medium">${s.name}</div>
+                <div class="text-xs text-gray-500">${s.url}</div>
+                <div class="text-xs text-gray-500 mt-1">最近 24 小时检查：${history.length} 次</div>
+              </div>
+              <div class="text-right">
+                <div class="inline-flex items-center gap-2 mb-2">
+                  <div class="${badgeColor} px-3 py-1 rounded-full text-sm font-semibold">${(latest.status||'unknown').toUpperCase()}</div>
+                  <div class="text-sm text-gray-600">可用率 ${uptime}%</div>
+                </div>
+                <div class="text-xs text-gray-500">${rtt ? '平均响应 ' + rtt + ' ms' : ''}</div>
+                <div class="mt-2 w-48 h-2 bg-gray-200 rounded overflow-hidden">
+                  <div style="width:${uptime}%;background:linear-gradient(90deg,#34d399,#059669)" class="h-full"></div>
+                </div>
+              </div>
+            </article>
+          `
+        }).join('')
+      } catch (e) {
+        document.getElementById('list').innerHTML = `<div class="p-4 bg-red-50 text-red-700 rounded">无法读取 status.json: ${e.message}</div>`
+      }
+    }
+
+    render()
+    setInterval(render, 30 * 1000)
+  </script>
+</body>
+</html>
