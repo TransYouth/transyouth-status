@@ -81,7 +81,7 @@ async function run() {
       execSync('git config user.name "github-actions[bot]"')
       execSync('git config user.email "41898282+github-actions[bot]@users.noreply.github.com"')
       execSync('git add docs/status.json')
-      execSync('git commit -m "chore(status): update status.json [skip ci]"', { stdio: 'inherit' })
+      execSync('git commit -m "chore(status): update status.json"', { stdio: 'inherit' })
       // push back to the same branch
       execSync('git push', { stdio: 'inherit' })
       console.log('Committed status.json')
