@@ -83,7 +83,8 @@ async function run() {
       execSync('git add docs/status.json')
       execSync('git commit -m "chore(status): update status.json"', { stdio: 'inherit' })
       // push back to the same branch
-      execSync('git push', { stdio: 'inherit' })
+      execSync('git push origin HEAD:no-ci-branch', { stdio: 'inherit' });
+      //execSync('git push', { stdio: 'inherit' })
       console.log('Committed status.json')
     } catch (e) {
       console.log('git commit/push skipped (maybe no changes or permission):', e.message)
