@@ -1,18 +1,11 @@
 {
-  "updatedAt": "2025-11-23T20:48:15.031Z",
+  "updatedAt": "2025-11-23T21:00:17.542Z",
   "services": [
     {
       "id": "site",
       "name": "transyouth.xyz",
       "url": "https://transyouth.xyz",
       "history": [
-        {
-          "ts": "2025-11-22T20:54:33.423Z",
-          "status": "ok",
-          "http": 200,
-          "rtt": 210,
-          "note": "OK"
-        },
         {
           "ts": "2025-11-22T21:11:18.148Z",
           "status": "ok",
@@ -480,6 +473,13 @@
           "status": "ok",
           "http": 200,
           "rtt": 206,
+          "note": "OK"
+        },
+        {
+          "ts": "2025-11-23T21:00:17.542Z",
+          "status": "ok",
+          "http": 200,
+          "rtt": 307,
           "note": "OK"
         }
       ]
