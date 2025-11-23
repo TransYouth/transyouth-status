@@ -11,7 +11,7 @@
   <main class="max-w-7xl mx-auto p-6">
     <header class="mb-6">
       <h1 class="text-2xl font-semibold">跨青年 Trans Youth 状态页</h1>
-      <p class="text-sm text-gray-600">最近 24 小时状态概览 · 数据每 5 分钟更新</p>
+      <p class="text-sm text-gray-600">最近状态概览 · 数据自动更新</p>
     </header>
 
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
@@ -24,6 +24,7 @@
     <footer class="mt-6 text-sm text-gray-500">页面自动刷新：每 30 秒</footer>
   </main>
 
+  <!-- detail panel -->
   <aside id="detailPanel" class="fixed inset-y-0 right-0 w-full md:w-1/3 lg:w-1/4 bg-white shadow-xl transform translate-x-full transition-transform duration-200 z-50">
     <div class="p-4 border-b flex items-start justify-between">
       <div>
@@ -50,7 +51,12 @@
   <div id="overlay" class="hidden fixed inset-0 bg-black/40 z-40"></div>
 
   <script>
-    // --- util helpers ---
+    /* ---------- helpers ---------- */
+    const MAX_BOXES = 30;    // display last 30 points
+    const CHART_WIDTH = 240; // svg width in px for chart inside card
+    const CHART_HEIGHT = 64; // fixed chart height
+    const PADDING = 6;       // chart padding
+
     const pct = arr => {
       if (!arr || arr.length === 0) return 0
       const ok = arr.filter(x => x.status === 'ok').length
@@ -70,168 +76,134 @@
       return 'bg-gray-50 text-gray-700 ring-gray-200'
     }
 
-    // --- sparkline generator ---
-    // history: array of entries (oldest -> newest)
-    // width,height in px; maxPoints controls number of samples (we pick last maxPoints)
-    function makeSparklineSvg(history = [], width = 140, height = 28, maxPoints = 20, color = '#34d399', fallback = '#cbd5e1') {
-      if (!history || history.length === 0) {
-        // empty placeholder: small gray line
-        return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <rect width="${width}" height="${height}" fill="none"></rect>
-          <polyline points="0 ${height/2} ${width} ${height/2}" stroke="${fallback}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke-dasharray="3 3"></polyline>
-        </svg>`
-      }
+    function escapeHtml(s){ if (!s) return ''; return String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;') }
 
-      // take last maxPoints entries
-      const points = history.slice(-maxPoints).map(h => h.rtt != null ? h.rtt : null)
-      // compute x spacing
-      const n = points.length
-      const xs = []
-      const step = n > 1 ? (width / (n - 1)) : width
-      for (let i=0;i<n;i++) xs.push(i * step)
+    /* ---------- create boxes row HTML ----------
+       history: array oldest->newest; we render MAX_BOXES boxes left->right with latest at right
+    */
+    function makeBoxesRow(history = [], max = MAX_BOXES) {
+      const arr = history.slice(-max)
+      const pad = Array.from({length: Math.max(0, max - arr.length)}, () => null)
+      const merged = [...pad, ...arr] // left pad, right newest
+      // each box fixed size
+      return `<div class="flex items-center gap-1 w-full overflow-hidden" style="white-space:nowrap">
+        ${merged.map((h, i) => {
+          if (!h) {
+            return `<div class="w-3 h-3 rounded-sm bg-gray-100 border"></div>`
+          }
+          const cls = h.status === 'ok' ? 'bg-green-500' : (h.status === 'degraded' ? 'bg-yellow-500' : (h.status === 'down' ? 'bg-red-500' : 'bg-gray-300'))
+          const title = `${new Date(h.ts).toLocaleString()} · ${h.status.toUpperCase()} · ${h.rtt? h.rtt+' ms': '—'}`
+          return `<div title="${escapeHtml(title)}" class="${cls} w-3 h-3 rounded-sm border" style="flex:0 0 auto"></div>`
+        }).join('')}
+      </div>`
+    }
 
-      // determine y scale from rtt values (ignore nulls)
-      const vals = points.filter(v => v != null)
-      let min = vals.length ? Math.min(...vals) : 0
-      let max = vals.length ? Math.max(...vals) : 1
-      // small padding
-      if (min === max) {
-        // if all equal, create a small range so line not flat on edge
-        min = min - 1
-        max = max + 1
-      }
-      const range = max - min
-
-      // map to y coordinate (0 top -> height bottom)
-      const coords = points.map((v, i) => {
-        const x = xs[i] || 0
-        if (v == null) return null
-        const y = height - ((v - min) / range) * (height - 4) - 2 // 2px padding top/bottom
-        return { x: Math.round(x), y: Math.round(y) }
-      })
-
-      // build path skipping nulls (we draw continuous segments where data exists)
-      let pathD = ''
-      let polylinePoints = []
-      let segs = [] // store segments as arrays of points
-      for (let i=0;i<coords.length;i++){
-        const p = coords[i]
-        if (p) {
-          polylinePoints.push(`${p.x},${p.y}`)
+    /* ---------- make RTT line chart with y-axis ticks ----------
+       history: oldest->newest
+       We map null rtt (timeout) to top of chart (y = padding)
+       yMax minimum 200ms to show 100/200 tick lines
+    */
+    function makeRttChart(history = [], width = CHART_WIDTH, height = CHART_HEIGHT, maxPoints = MAX_BOXES) {
+      const pts = history.slice(-maxPoints)
+      const values = pts.map(p => (p && p.rtt != null) ? p.rtt : null)
+      const valsForScale = values.filter(v => v != null)
+      const maxData = valsForScale.length ? Math.max(...valsForScale) : 0
+      const baselineMax = Math.max(200, Math.ceil(maxData / 50) * 50) // round up to 50ms
+      const yMax = baselineMax
+      const n = Math.max(maxPoints, pts.length || 1)
+      const stepX = width / (n - 1 || 1)
+      // compute points (x,y) where y: padding..height-padding (top..bottom). Map larger rtt -> lower y.
+      const coords = []
+      for (let i=0;i<n;i++) {
+        const p = pts[i - (n - pts.length)] || null // align right if fewer points
+        const x = Math.round(i * stepX)
+        if (!p || p.rtt == null) {
+          // timeout or missing -> map to top (small y)
+          coords.push({ x, y: PADDING, isTimeout: true, val: null, ts: p ? p.ts : null })
         } else {
-          if (polylinePoints.length) { segs.push(polylinePoints); polylinePoints = [] }
+          const ratio = Math.min(p.rtt / yMax, 1)
+          const y = Math.round(PADDING + (1 - ratio) * (height - 2 * PADDING))
+          coords.push({ x, y, isTimeout: false, val: p.rtt, ts: p.ts })
         }
       }
-      if (polylinePoints.length) segs.push(polylinePoints)
 
-      // color for line (use provided color)
-      const stroke = color
-      const strokeFallback = fallback
-
-      // build svg: draw light bg polyline for baseline, then colored segments
+      // build path string skipping nulls? we'll connect points anyway; time gaps allowed
+      const path = coords.map(c => `${c.x},${c.y}`).join(' ')
+      // y-axis ticks: show 0 (bottom), mid, top labels -> compute labels at 0, yMax/2, yMax
+      const ticks = [0, Math.round(yMax/2), yMax]
+      // build svg
+      const stroke = '#2563eb'
+      const timeoutColor = '#ef4444'
       let svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">`
-      // background grid line (optional subtle center)
-      svg += `<line x1="0" y1="${height/2}" x2="${width}" y2="${height/2}" stroke="#eef2f7" stroke-width="1"></line>`
-
-      // draw segments
-      if (segs.length === 0) {
-        svg += `<polyline points="0 ${height/2} ${width} ${height/2}" stroke="${strokeFallback}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke-dasharray="3 3"></polyline>`
-      } else {
-        // draw a faint area under curve for visual
-        // compute overall min/max y for area baseline
-        // draw each segment
-        segs.forEach((seg, idx) => {
-          svg += `<polyline points="${seg.join(' ')}" stroke="${stroke}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="1"></polyline>`
-          // small circle at last point of last segment to emphasize latest
-          if (idx === segs.length - 1) {
-            const last = seg[seg.length - 1].split(',')
-            svg += `<circle cx="${last[0]}" cy="${last[1]}" r="1.6" fill="${stroke}"></circle>`
-          }
-        })
-      }
-
+      // gridlines and y labels (we'll draw faint horizontal lines)
+      ticks.forEach((t, idx) => {
+        const y = Math.round(PADDING + (1 - (t / yMax)) * (height - 2 * PADDING))
+        svg += `<line x1="0" y1="${y}" x2="${width}" y2="${y}" stroke="#eef2f7" stroke-width="1"></line>`
+        svg += `<text x="2" y="${y-2}" font-size="8" fill="#94a3b8">${t}ms</text>`
+      })
+      // draw polyline (solid for available points)
+      svg += `<polyline points="${path}" fill="none" stroke="${stroke}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></polyline>`
+      // draw small circles (use red for timeouts)
+      coords.forEach(c => {
+        if (c.isTimeout) {
+          svg += `<circle cx="${c.x}" cy="${c.y}" r="2.2" fill="${timeoutColor}"></circle>`
+        } else {
+          svg += `<circle cx="${c.x}" cy="${c.y}" r="1.6" fill="${stroke}"></circle>`
+        }
+      })
       svg += `</svg>`
       return svg
     }
 
-    // escape helper
-    function escapeHtml(str) {
-      if (!str) return ''
-      return String(str).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
+    /* ---------- render card per service ---------- */
+    function makeCardHtml(svc) {
+      const history = svc.history || []
+      const uptime = pct(history)
+      const rtt = avgRtt(history)
+      const latest = history[history.length - 1] || {}
+      const badge = statusBadgeClass(latest.status)
+      const boxes = makeBoxesRow(history, MAX_BOXES)
+      const chart = makeRttChart(history, CHART_WIDTH, CHART_HEIGHT, MAX_BOXES)
+      return `
+        <button data-id="${svc.id}" class="group text-left p-3 bg-white rounded-lg shadow-sm border hover:shadow-md transition-colors flex flex-col gap-3" aria-controls="detailPanel" aria-expanded="false">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <div class="text-sm font-medium truncate">${escapeHtml(svc.name)}</div>
+                <div class="text-xs ${badge} px-2 py-0.5 rounded-full ring-1">${(latest.status||'unknown').toUpperCase()}</div>
+              </div>
+              <div class="text-xs text-gray-500 truncate mt-1">${escapeHtml(svc.url)}</div>
+            </div>
+            <div class="text-right ml-2">
+              <div class="text-sm font-semibold">${uptime}%</div>
+              <div class="text-xs text-gray-500">${rtt ? rtt + ' ms' : '—'}</div>
+            </div>
+          </div>
+
+          <!-- boxes row -->
+          <div class="mt-1">${boxes}</div>
+
+          <!-- chart -->
+          <div class="mt-1">${chart}</div>
+        </button>
+      `
     }
 
-    // render grid
-    async function renderGrid(data) {
-      const grid = document.getElementById('grid')
-      const updatedEl = document.getElementById('updated')
-      const countEl = document.getElementById('count')
-      updatedEl.textContent = data.updatedAt ? new Date(data.updatedAt).toLocaleString() : '—'
-      const services = data.services || []
-      countEl.textContent = services.length
-
-      grid.innerHTML = services.map(s => {
-        const history = s.history || []
-        const uptime = pct(history)
-        const rtt = avgRtt(history)
-        const latest = history[history.length - 1] || {}
-        const badge = statusBadgeClass(latest.status)
-
-        // choose sparkline color based on status
-        const sparkColor = latest.status === 'ok' ? '#34d399' : (latest.status === 'degraded' ? '#f59e0b' : (latest.status === 'down' ? '#ef4444' : '#94a3b8'))
-        const svg = makeSparklineSvg(history, 140, 28, 20, sparkColor, '#e2e8f0')
-
-        return `
-          <button data-id="${s.id}" class="group text-left p-3 bg-white rounded-lg shadow-sm border hover:shadow-md focus:shadow-md transition-colors flex flex-col gap-3"
-                  aria-controls="detailPanel" aria-expanded="false">
-            <div class="flex items-start justify-between gap-3">
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2">
-                  <div class="text-sm font-medium truncate">${escapeHtml(s.name)}</div>
-                  <div class="text-xs ${badge} px-2 py-0.5 rounded-full ring-1">${(latest.status||'unknown').toUpperCase()}</div>
-                </div>
-                <div class="text-xs text-gray-500 truncate mt-1">${escapeHtml(s.url)}</div>
-              </div>
-              <div class="text-right ml-2">
-                <div class="text-sm font-semibold">${uptime}%</div>
-                <div class="text-xs text-gray-500">${rtt ? rtt + ' ms' : '—'}</div>
-              </div>
-            </div>
-
-            <div class="mt-1">
-              <div class="w-full h-7">${svg}</div>
-            </div>
-
-            <div class="mt-auto text-xs text-gray-400">最近 ${history.length} 次</div>
-          </button>
-        `
-      }).join('')
-
-      // attach click handlers
-      grid.querySelectorAll('button[data-id]').forEach(btn => {
-        btn.addEventListener('click', () => openDetail(btn.getAttribute('data-id'), data))
-      })
-    }
-
-    // detail panel open/close
+    /* ---------- detail panel open/close ---------- */
     function openDetail(id, data) {
       const svc = (data.services || []).find(s => s.id === id)
       if (!svc) return
-      const panel = document.getElementById('detailPanel')
-      const overlay = document.getElementById('overlay')
-
       document.getElementById('detailName').textContent = svc.name
       document.getElementById('detailUrl').textContent = svc.url
-
       const history = (svc.history || []).slice().reverse()
       document.getElementById('detailLatest').textContent = history[0] ? history[0].status.toUpperCase() : '—'
       document.getElementById('detailUptime').textContent = pct(svc.history || [])
       document.getElementById('detailRtt').textContent = avgRtt(svc.history || []) || '—'
-
       const list = document.getElementById('historyList')
       list.innerHTML = history.map(h => {
         const c = h.status === 'ok' ? 'text-green-700' : (h.status === 'degraded' ? 'text-yellow-700' : 'text-red-700')
         const http = h.http || '—'
-        const rtt = h.rtt ? h.rtt + ' ms' : '—'
+        const rtt = h.rtt ? h.rtt + ' ms' : 'TIMEOUT'
         return `<div class="p-2 border rounded bg-gray-50">
           <div class="flex items-center justify-between gap-2">
             <div class="text-xs ${c} font-semibold">${(h.status||'unknown').toUpperCase()}</div>
@@ -240,22 +212,21 @@
           <div class="mt-1 text-xs text-gray-600">HTTP: ${http} · 延迟: ${rtt} · ${escapeHtml(h.note || '')}</div>
         </div>`
       }).join('')
-
+      const panel = document.getElementById('detailPanel')
+      const overlay = document.getElementById('overlay')
       panel.classList.remove('translate-x-full')
       overlay.classList.remove('hidden')
       document.getElementById('closeDetail').onclick = closeDetail
       overlay.onclick = closeDetail
     }
 
-    function closeDetail() {
-      const panel = document.getElementById('detailPanel')
-      const overlay = document.getElementById('overlay')
-      panel.classList.add('translate-x-full')
-      overlay.classList.add('hidden')
+    function closeDetail(){
+      document.getElementById('detailPanel').classList.add('translate-x-full')
+      document.getElementById('overlay').classList.add('hidden')
     }
 
-    // fetch status safely
-    async function fetchStatus(url = 'status.json') {
+    /* ---------- fetch status.json safely ---------- */
+    async function fetchStatus(url='status.json') {
       try {
         const res = await fetch(url, { cache: 'no-store' })
         if (!res.ok) throw new Error('HTTP ' + res.status)
@@ -267,15 +238,21 @@
       }
     }
 
-    let lastData = { updatedAt: null, services: [] }
+    /* ---------- render loop ---------- */
     async function refresh() {
       const data = await fetchStatus('status.json')
-      lastData = data
-      await renderGrid(data)
       document.getElementById('updated').textContent = data.updatedAt ? new Date(data.updatedAt).toLocaleString() : '—'
+      const services = data.services || []
+      document.getElementById('count').textContent = services.length
+      const grid = document.getElementById('grid')
+      grid.innerHTML = services.map(s => makeCardHtml(s)).join('')
+      // attach handlers
+      grid.querySelectorAll('button[data-id]').forEach(btn => {
+        btn.addEventListener('click', () => openDetail(btn.getAttribute('data-id'), data))
+      })
     }
 
-    window.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail() })
+    window.addEventListener('keydown', e=>{ if (e.key === 'Escape') closeDetail() })
     refresh()
     setInterval(refresh, 30 * 1000)
   </script>
