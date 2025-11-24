@@ -7,6 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="icon" href="https://transyouth.xyz/favicon.ico">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
   <style>
     @media (max-width: 768px) {
       .sidebar-collapsed {
@@ -60,7 +61,7 @@
       </aside>
 
       <!-- Right Panel - Details -->
-      <main class="flex-1 overflow-y-auto">
+      <main class="flex-1 overflow-y-auto" onclick="handleMainClick(event)">
         <div id="emptyState" class="flex items-center justify-center h-full text-gray-400">
           <div class="text-center">
             <svg class="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -366,7 +367,16 @@
       // Calculate dynamic Y-axis max
       const rtts = last24h.map(h => h.rtt).filter(r => r != null);
       const maxRtt = rtts.length > 0 ? Math.max(...rtts) : 500;
-      const yMax = Math.ceil(maxRtt * 1.2 / 100) * 100; // Round up to nearest 100
+      const yMax = Math.ceil(maxRtt * 1.2 / 100) * 100;
+
+      // Prepare data with nulls for timeout/error
+      const chartData = last24h.map(h => {
+        // Check if it's a timeout or error (degraded/down status or no rtt)
+        if (h.status === 'degraded' || h.status === 'down' || !h.rtt) {
+          return null;
+        }
+        return h.rtt;
+      });
 
       chartInstance = new Chart(ctx, {
         type: 'line',
@@ -382,26 +392,44 @@
           }),
           datasets: [{
             label: '响应时间 (ms)',
-            data: last24h.map(h => h.rtt || 0),
+            data: chartData,
+            spanGaps: false, // Don't connect across null values
             segment: {
               borderColor: ctx => {
-                const value = ctx.p1.parsed.y;
-                if (value === 0) return '#ef4444'; // red for timeout
-                if (value < 200) return '#22c55e'; // green
-                if (value < 400) return '#f97316'; // orange
-                return '#ef4444'; // red
+                const prevIdx = ctx.p0DataIndex;
+                const nextIdx = ctx.p1DataIndex;
+                const prevVal = chartData[prevIdx];
+                const nextVal = chartData[nextIdx];
+                
+                // Red if either point is null (timeout)
+                if (prevVal === null || nextVal === null) return '#ef4444';
+                
+                // Use average of the two points for color
+                const avgVal = (prevVal + nextVal) / 2;
+                if (avgVal <= 500) return '#22c55e'; // green
+                return '#f97316'; // orange
+              },
+              backgroundColor: ctx => {
+                const prevIdx = ctx.p0DataIndex;
+                const nextIdx = ctx.p1DataIndex;
+                const prevVal = chartData[prevIdx];
+                const nextVal = chartData[nextIdx];
+                
+                if (prevVal === null || nextVal === null) return 'rgba(239, 68, 68, 0.1)';
+                
+                const avgVal = (prevVal + nextVal) / 2;
+                if (avgVal <= 500) return 'rgba(34, 197, 94, 0.1)';
+                return 'rgba(249, 115, 22, 0.1)';
               }
             },
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
             tension: 0.4,
-            fill: false,
+            fill: true,
             pointRadius: 4,
             pointHoverRadius: 7,
             pointBackgroundColor: last24h.map(h => {
-              if (!h.rtt) return '#ef4444';
-              if (h.rtt < 200) return '#22c55e';
-              if (h.rtt < 400) return '#f97316';
-              return '#ef4444';
+              if (h.status === 'degraded' || h.status === 'down' || !h.rtt) return '#ef4444';
+              if (h.rtt <= 500) return '#22c55e';
+              return '#f97316';
             }),
             pointBorderColor: '#fff',
             pointBorderWidth: 2
@@ -425,13 +453,34 @@
                 },
                 label: (context) => {
                   const h = last24h[context.dataIndex];
-                  if (!h.rtt) return '响应: TIMEOUT';
+                  if (h.status === 'degraded' || h.status === 'down' || !h.rtt) {
+                    return [
+                      '响应: TIMEOUT',
+                      `状态: ${h.status.toUpperCase()}`,
+                      `HTTP: ${h.http || '—'}`
+                    ];
+                  }
                   return [
                     `响应: ${h.rtt} ms`,
                     `状态: ${h.status.toUpperCase()}`,
                     `HTTP: ${h.http || '—'}`
                   ];
                 }
+              }
+            },
+            zoom: {
+              pan: {
+                enabled: true,
+                mode: 'x'
+              },
+              zoom: {
+                wheel: {
+                  enabled: false
+                },
+                pinch: {
+                  enabled: true
+                },
+                mode: 'x'
               }
             }
           },
@@ -603,6 +652,16 @@
       sidebar.classList.add('sidebar-collapsed');
       sidebar.classList.remove('sidebar-visible');
       overlay.classList.add('hidden');
+    }
+
+    function handleMainClick(event) {
+      // Close sidebar when clicking on the main content area on mobile
+      if (window.innerWidth < 768) {
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar.classList.contains('sidebar-visible')) {
+          closeSidebar();
+        }
+      }
     }
 
     document.getElementById('toggleSidebar').addEventListener('click', toggleSidebar);
