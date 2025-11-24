@@ -7,27 +7,47 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="icon" href="https://transyouth.xyz/favicon.ico">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <style>
+    @media (max-width: 768px) {
+      .sidebar-collapsed {
+        transform: translateX(-100%);
+      }
+      .sidebar-visible {
+        transform: translateX(0);
+      }
+    }
+  </style>
 </head>
 <body class="bg-gray-50 text-gray-900 h-screen overflow-hidden">
   <div class="flex flex-col h-screen">
     <!-- Header -->
-    <header class="bg-white border-b px-6 py-4 flex-shrink-0">
+    <header class="bg-white border-b px-4 md:px-6 py-4 flex-shrink-0">
       <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-2xl font-semibold text-gray-900">跨青年 Trans Youth 状态页</h1>
-          <p class="text-sm text-gray-600 mt-1">实时监控 · 最后更新：<span id="updated">—</span></p>
+        <div class="flex items-center gap-3">
+          <button id="toggleSidebar" class="md:hidden p-2 hover:bg-gray-100 rounded-lg">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <div>
+            <h1 class="text-xl md:text-2xl font-semibold text-gray-900">跨青年 Trans Youth 状态页</h1>
+            <p class="text-xs md:text-sm text-gray-600 mt-1">实时监控 · 最后更新：<span id="updated">—</span></p>
+          </div>
         </div>
         <div class="text-right">
-          <div class="text-sm text-gray-600">监控节点</div>
-          <div class="text-2xl font-semibold text-gray-900"><span id="count">0</span></div>
+          <div class="text-xs md:text-sm text-gray-600">监控节点</div>
+          <div class="text-xl md:text-2xl font-semibold text-gray-900"><span id="count">0</span></div>
         </div>
       </div>
     </header>
 
     <!-- Main Content -->
-    <div class="flex flex-1 overflow-hidden">
+    <div class="flex flex-1 overflow-hidden relative">
+      <!-- Overlay for mobile -->
+      <div id="sidebarOverlay" class="hidden md:hidden fixed inset-0 bg-black bg-opacity-50 z-10"></div>
+      
       <!-- Left Sidebar - Services List -->
-      <aside class="w-80 bg-white border-r flex flex-col overflow-hidden">
+      <aside id="sidebar" class="sidebar-visible md:relative fixed inset-y-0 left-0 w-80 bg-white border-r flex flex-col overflow-hidden z-20 transition-transform duration-300">
         <div class="p-4 border-b">
           <input 
             type="text" 
@@ -50,81 +70,85 @@
           </div>
         </div>
 
-        <div id="detailView" class="hidden p-6">
+        <div id="detailView" class="hidden p-4 md:p-6">
           <!-- Service Header -->
-          <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <div class="bg-white rounded-lg shadow-sm p-4 md:p-6 mb-4 md:mb-6">
             <div class="flex items-start justify-between mb-4">
-              <div>
-                <h2 id="serviceName" class="text-2xl font-semibold text-gray-900"></h2>
-                <a id="serviceUrl" href="#" target="_blank" class="text-sm text-blue-600 hover:underline mt-1 inline-block"></a>
+              <div class="flex-1 min-w-0 mr-4">
+                <h2 id="serviceName" class="text-xl md:text-2xl font-semibold text-gray-900 truncate"></h2>
+                <a id="serviceUrl" href="#" target="_blank" class="text-sm text-blue-600 hover:underline mt-1 inline-block truncate max-w-full"></a>
               </div>
-              <div id="serviceStatus" class="px-3 py-1 rounded-full text-sm font-medium"></div>
+              <div id="serviceStatus" class="px-3 py-1 rounded-full text-sm font-medium flex-shrink-0"></div>
             </div>
 
-            <!-- Stats Grid -->
-            <div class="grid grid-cols-5 gap-4 mt-6">
-              <div class="text-center">
-                <div class="text-sm text-gray-600 mb-1">响应 (当前)</div>
-                <div id="currentRtt" class="text-2xl font-semibold text-gray-900">—</div>
-              </div>
-              <div class="text-center">
-                <div class="text-sm text-gray-600 mb-1">平均响应 (24小时)</div>
-                <div id="avg24h" class="text-2xl font-semibold text-gray-900">—</div>
-              </div>
-              <div class="text-center">
-                <div class="text-sm text-gray-600 mb-1">在线时间 (24小时)</div>
-                <div id="uptime24h" class="text-2xl font-semibold text-green-600">—</div>
-              </div>
-              <div class="text-center">
-                <div class="text-sm text-gray-600 mb-1">在线时间 (30天)</div>
-                <div id="uptime30d" class="text-2xl font-semibold text-green-600">—</div>
-              </div>
-              <div class="text-center">
-                <div class="text-sm text-gray-600 mb-1">在线时间 (1年)</div>
-                <div id="uptime1y" class="text-2xl font-semibold text-green-600">—</div>
-              </div>
+            <!-- Stats Table -->
+            <div class="overflow-x-auto">
+              <table class="w-full text-center">
+                <tbody>
+                  <tr class="border-b">
+                    <td class="py-2 px-2 text-xs md:text-sm text-gray-600">响应 (当前)</td>
+                    <td class="py-2 px-2 text-xs md:text-sm text-gray-600">平均响应 (24小时)</td>
+                    <td class="py-2 px-2 text-xs md:text-sm text-gray-600">在线时间 (24小时)</td>
+                    <td class="py-2 px-2 text-xs md:text-sm text-gray-600">在线时间 (30天)</td>
+                    <td class="py-2 px-2 text-xs md:text-sm text-gray-600">在线时间 (1年)</td>
+                  </tr>
+                  <tr>
+                    <td id="currentRtt" class="py-2 px-2 text-lg md:text-2xl font-semibold text-gray-900">—</td>
+                    <td id="avg24h" class="py-2 px-2 text-lg md:text-2xl font-semibold text-gray-900">—</td>
+                    <td id="uptime24h" class="py-2 px-2 text-lg md:text-2xl font-semibold text-green-600">—</td>
+                    <td id="uptime30d" class="py-2 px-2 text-lg md:text-2xl font-semibold text-green-600">—</td>
+                    <td id="uptime1y" class="py-2 px-2 text-lg md:text-2xl font-semibold text-green-600">—</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
           <!-- Timeline -->
-          <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
-            <h3 class="text-lg font-semibold mb-4">最近24小时状态</h3>
+          <div class="bg-white rounded-lg shadow-sm p-4 md:p-6 mb-4 md:mb-6">
+            <h3 class="text-base md:text-lg font-semibold mb-4">最近24小时状态</h3>
             <div class="relative">
               <div id="timeline" class="flex gap-1 overflow-x-auto pb-2"></div>
               <!-- Tooltip -->
-              <div id="tooltip" class="hidden absolute bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg z-10" style="pointer-events: none;">
+              <div id="tooltip" class="hidden fixed bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg z-50 pointer-events-none">
                 <div id="tooltipContent"></div>
               </div>
             </div>
           </div>
 
           <!-- Response Time Chart -->
-          <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
-            <h3 class="text-lg font-semibold mb-4">响应时间趋势 (24小时)</h3>
-            <div class="overflow-x-auto">
-              <div style="min-width: 800px; height: 256px;">
+          <div class="bg-white rounded-lg shadow-sm p-4 md:p-6 mb-4 md:mb-6">
+            <h3 class="text-base md:text-lg font-semibold mb-4">响应时间趋势 (24小时)</h3>
+            <div class="relative overflow-x-auto">
+              <div style="min-width: 600px; height: 300px;">
                 <canvas id="responseChart"></canvas>
               </div>
             </div>
           </div>
 
           <!-- History Table -->
-          <div class="bg-white rounded-lg shadow-sm p-6">
+          <div class="bg-white rounded-lg shadow-sm p-4 md:p-6">
             <div class="flex items-center justify-between mb-4">
-              <h3 class="text-lg font-semibold">检测历史</h3>
-              <button id="toggleTable" class="text-sm text-blue-600 hover:text-blue-700">
-                <span id="toggleText">展开全部</span>
-              </button>
+              <h3 class="text-base md:text-lg font-semibold">
+                检测历史
+                <span id="filterInfo" class="text-sm font-normal text-gray-500 ml-2"></span>
+              </h3>
+              <div class="flex gap-2">
+                <button id="clearFilter" class="hidden text-sm text-blue-600 hover:text-blue-700">清除筛选</button>
+                <button id="toggleTable" class="text-sm text-blue-600 hover:text-blue-700">
+                  <span id="toggleText">展开全部</span>
+                </button>
+              </div>
             </div>
-            <div id="historyTable" class="overflow-hidden">
+            <div id="historyTable" class="overflow-x-auto">
               <table class="w-full text-sm">
                 <thead class="bg-gray-50 border-b">
                   <tr>
-                    <th class="text-left py-3 px-4 font-medium text-gray-700">时间</th>
-                    <th class="text-left py-3 px-4 font-medium text-gray-700">状态</th>
-                    <th class="text-left py-3 px-4 font-medium text-gray-700">响应时间</th>
-                    <th class="text-left py-3 px-4 font-medium text-gray-700">HTTP 状态</th>
-                    <th class="text-left py-3 px-4 font-medium text-gray-700">备注</th>
+                    <th class="text-left py-3 px-2 md:px-4 font-medium text-gray-700">时间</th>
+                    <th class="text-left py-3 px-2 md:px-4 font-medium text-gray-700">状态</th>
+                    <th class="text-left py-3 px-2 md:px-4 font-medium text-gray-700">响应时间</th>
+                    <th class="text-left py-3 px-2 md:px-4 font-medium text-gray-700">HTTP 状态</th>
+                    <th class="text-left py-3 px-2 md:px-4 font-medium text-gray-700 hidden md:table-cell">备注</th>
                   </tr>
                 </thead>
                 <tbody id="historyBody" class="divide-y"></tbody>
@@ -141,6 +165,7 @@
     let currentService = null;
     let chartInstance = null;
     let showAllHistory = false;
+    let selectedHourFilter = null;
 
     const statusColors = {
       ok: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-300', dot: 'bg-green-500' },
@@ -205,13 +230,11 @@
       const now = new Date();
       const hours = [];
       
-      // Create 24 hourly buckets (from 24 hours ago to now)
       for (let i = 23; i >= 0; i--) {
         const hourStart = new Date(now.getTime() - i * 60 * 60 * 1000);
         hourStart.setMinutes(0, 0, 0);
         const hourEnd = new Date(hourStart.getTime() + 60 * 60 * 1000);
         
-        // Find all checks in this hour
         const checksInHour = history.filter(h => {
           const checkTime = new Date(h.ts);
           return checkTime >= hourStart && checkTime < hourEnd;
@@ -225,13 +248,10 @@
       }
       
       timeline.innerHTML = hours.map((hour, idx) => {
-        let color, status, displayText;
+        let color;
         
         if (hour.checks.length === 0) {
-          // No data - assume green
           color = 'bg-green-500';
-          status = '无数据 (默认在线)';
-          displayText = '✓';
         } else {
           const okCount = hour.checks.filter(c => c.status === 'ok').length;
           const total = hour.checks.length;
@@ -239,53 +259,25 @@
           
           if (okRate === 1) {
             color = 'bg-green-500';
-            status = '全部在线';
-            displayText = '✓';
           } else if (okRate > 0) {
             color = 'bg-yellow-500';
-            status = '部分故障';
-            displayText = '!';
           } else {
             color = 'bg-red-500';
-            status = '全部故障';
-            displayText = '✕';
           }
         }
         
         return `
           <div 
-            class="flex-1 min-w-[32px] h-12 ${color} rounded-lg cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center text-white text-sm font-semibold"
+            class="flex-1 min-w-[24px] h-12 ${color} rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
             onmouseenter="showHourTooltip(event, ${idx})"
             onmouseleave="hideTooltip()"
+            onclick="filterByHour(${idx})"
             data-idx="${idx}"
-          >${displayText}</div>
+          ></div>
         `;
       }).join('');
 
-      // Store hours data for tooltip
       timeline.dataset.hours = JSON.stringify(hours);
-    }
-
-    function showTooltip(event, idx) {
-      const timeline = document.getElementById('timeline');
-      const history = JSON.parse(timeline.dataset.history || '[]');
-      const h = history[idx];
-      if (!h) return;
-
-      const tooltip = document.getElementById('tooltip');
-      const content = document.getElementById('tooltipContent');
-      
-      content.innerHTML = `
-        <div class="font-semibold mb-1">${h.status.toUpperCase()}</div>
-        <div>${new Date(h.ts).toLocaleString()}</div>
-        <div>延迟: ${h.rtt ? h.rtt + ' ms' : 'TIMEOUT'}</div>
-        <div>HTTP: ${h.http || '—'}</div>
-      `;
-
-      tooltip.classList.remove('hidden');
-      const rect = event.target.getBoundingClientRect();
-      tooltip.style.left = rect.left + 'px';
-      tooltip.style.top = (rect.top - tooltip.offsetHeight - 8) + 'px';
     }
 
     function showHourTooltip(event, idx) {
@@ -320,23 +312,49 @@
       content.innerHTML = `
         <div class="font-semibold mb-1">${startTime}</div>
         ${checksInfo}
+        <div class="text-gray-300 text-xs mt-1">点击筛选该小时</div>
       `;
 
       tooltip.classList.remove('hidden');
       const rect = event.target.getBoundingClientRect();
-      const tooltipWidth = 200;
-      tooltip.style.left = Math.min(rect.left, window.innerWidth - tooltipWidth - 10) + 'px';
-      tooltip.style.top = (rect.top - tooltip.offsetHeight - 8) + 'px';
+      tooltip.style.left = (rect.left + rect.width / 2 - 100) + 'px';
+      tooltip.style.top = (rect.bottom + 8) + 'px';
     }
 
     function hideTooltip() {
       document.getElementById('tooltip').classList.add('hidden');
     }
 
+    function filterByHour(idx) {
+      const timeline = document.getElementById('timeline');
+      const hours = JSON.parse(timeline.dataset.hours || '[]');
+      const hour = hours[idx];
+      if (!hour) return;
+
+      selectedHourFilter = hour;
+      const startTime = new Date(hour.start).toLocaleString('zh-CN', { 
+        month: 'numeric', 
+        day: 'numeric', 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+      
+      document.getElementById('filterInfo').textContent = `(筛选: ${startTime})`;
+      document.getElementById('clearFilter').classList.remove('hidden');
+      
+      renderHistoryTable(currentService.history || []);
+    }
+
+    function clearFilter() {
+      selectedHourFilter = null;
+      document.getElementById('filterInfo').textContent = '';
+      document.getElementById('clearFilter').classList.add('hidden');
+      renderHistoryTable(currentService.history || []);
+    }
+
     function renderChart(history) {
       const ctx = document.getElementById('responseChart');
       
-      // Filter last 24 hours
       const now = new Date();
       const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
       const last24h = history.filter(h => new Date(h.ts) >= twentyFourHoursAgo);
@@ -344,6 +362,11 @@
       if (chartInstance) {
         chartInstance.destroy();
       }
+
+      // Calculate dynamic Y-axis max
+      const rtts = last24h.map(h => h.rtt).filter(r => r != null);
+      const maxRtt = rtts.length > 0 ? Math.max(...rtts) : 500;
+      const yMax = Math.ceil(maxRtt * 1.2 / 100) * 100; // Round up to nearest 100
 
       chartInstance = new Chart(ctx, {
         type: 'line',
@@ -359,14 +382,27 @@
           }),
           datasets: [{
             label: '响应时间 (ms)',
-            data: last24h.map(h => h.rtt),
-            borderColor: '#3b82f6',
+            data: last24h.map(h => h.rtt || 0),
+            segment: {
+              borderColor: ctx => {
+                const value = ctx.p1.parsed.y;
+                if (value === 0) return '#ef4444'; // red for timeout
+                if (value < 200) return '#22c55e'; // green
+                if (value < 400) return '#f97316'; // orange
+                return '#ef4444'; // red
+              }
+            },
             backgroundColor: 'rgba(59, 130, 246, 0.1)',
             tension: 0.4,
-            fill: true,
+            fill: false,
             pointRadius: 4,
             pointHoverRadius: 7,
-            pointBackgroundColor: last24h.map(h => h.status === 'ok' ? '#3b82f6' : '#ef4444'),
+            pointBackgroundColor: last24h.map(h => {
+              if (!h.rtt) return '#ef4444';
+              if (h.rtt < 200) return '#22c55e';
+              if (h.rtt < 400) return '#f97316';
+              return '#ef4444';
+            }),
             pointBorderColor: '#fff',
             pointBorderWidth: 2
           }]
@@ -403,10 +439,10 @@
             y: {
               beginAtZero: true,
               min: 0,
-              max: 500,
+              max: yMax,
               ticks: { 
                 callback: (value) => value + ' ms',
-                stepSize: 100
+                stepSize: Math.ceil(yMax / 5 / 50) * 50
               },
               grid: {
                 color: '#f1f5f9'
@@ -429,7 +465,17 @@
 
     function renderHistoryTable(history) {
       const tbody = document.getElementById('historyBody');
-      const reversed = [...history].reverse();
+      let dataToShow = [...history];
+      
+      // Apply hour filter
+      if (selectedHourFilter) {
+        dataToShow = dataToShow.filter(h => {
+          const checkTime = new Date(h.ts);
+          return checkTime >= new Date(selectedHourFilter.start) && checkTime < new Date(selectedHourFilter.end);
+        });
+      }
+      
+      const reversed = dataToShow.reverse();
       const toShow = showAllHistory ? reversed : reversed.slice(0, 10);
       
       tbody.innerHTML = toShow.map(h => {
@@ -445,20 +491,20 @@
         
         return `
           <tr class="hover:bg-gray-50">
-            <td class="py-3 px-4">${localTime}</td>
-            <td class="py-3 px-4">
+            <td class="py-3 px-2 md:px-4 text-xs md:text-sm">${localTime}</td>
+            <td class="py-3 px-2 md:px-4">
               <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium ${color.bg} ${color.text}">
                 ${h.status.toUpperCase()}
               </span>
             </td>
-            <td class="py-3 px-4">${h.rtt ? h.rtt + ' ms' : '<span class="text-red-600">TIMEOUT</span>'}</td>
-            <td class="py-3 px-4">${h.http || '—'}</td>
-            <td class="py-3 px-4 text-gray-600">${escapeHtml(h.note || '—')}</td>
+            <td class="py-3 px-2 md:px-4 text-xs md:text-sm">${h.rtt ? h.rtt + ' ms' : '<span class="text-red-600">TIMEOUT</span>'}</td>
+            <td class="py-3 px-2 md:px-4 text-xs md:text-sm">${h.http || '—'}</td>
+            <td class="py-3 px-2 md:px-4 text-gray-600 text-xs md:text-sm hidden md:table-cell">${escapeHtml(h.note || '—')}</td>
           </tr>
         `;
       }).join('');
 
-      document.getElementById('toggleText').textContent = showAllHistory ? '收起' : `展开全部 (${history.length})`;
+      document.getElementById('toggleText').textContent = showAllHistory ? '收起' : `展开全部 (${dataToShow.length})`;
     }
 
     function selectService(id) {
@@ -471,11 +517,9 @@
       const latest = history[history.length - 1] || {};
       const color = getStatusColor(latest.status);
 
-      // Show detail view
       document.getElementById('emptyState').classList.add('hidden');
       document.getElementById('detailView').classList.remove('hidden');
 
-      // Update header
       document.getElementById('serviceName').textContent = currentService.name;
       const urlElem = document.getElementById('serviceUrl');
       urlElem.textContent = currentService.url;
@@ -485,20 +529,24 @@
       statusElem.textContent = (latest.status || 'unknown').toUpperCase();
       statusElem.className = `px-3 py-1 rounded-full text-sm font-medium ${color.bg} ${color.text} ${color.border} border`;
 
-      // Update stats
       document.getElementById('currentRtt').textContent = latest.rtt ? latest.rtt + ' ms' : '—';
       document.getElementById('avg24h').textContent = calculateAvgRtt(history.slice(-48)) ? calculateAvgRtt(history.slice(-48)) + ' ms' : '—';
       document.getElementById('uptime24h').textContent = calculateUptime(history.slice(-48)) + '%';
       document.getElementById('uptime30d').textContent = calculateUptime(history) + '%';
       document.getElementById('uptime1y').textContent = calculateUptime(history) + '%';
 
-      // Render components
+      // Clear filter when switching services
+      clearFilter();
+
       renderTimeline(history);
       renderChart(history);
       renderHistoryTable(history);
-
-      // Update list selection
       renderServicesList(currentData);
+
+      // Close sidebar on mobile after selection
+      if (window.innerWidth < 768) {
+        closeSidebar();
+      }
     }
 
     async function fetchStatus() {
@@ -515,7 +563,6 @@
     async function refresh() {
       currentData = await fetchStatus();
       
-      // Format time in user's timezone
       const updateTime = currentData.updatedAt ? 
         new Date(currentData.updatedAt).toLocaleString('zh-CN', {
           year: 'numeric',
@@ -531,13 +578,36 @@
       
       renderServicesList(currentData);
       
-      // Refresh current service if selected
       if (currentService) {
         selectService(currentService.id);
       }
     }
 
-    // Search functionality
+    // Sidebar toggle for mobile
+    function toggleSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebarOverlay');
+      
+      if (sidebar.classList.contains('sidebar-collapsed')) {
+        sidebar.classList.remove('sidebar-collapsed');
+        sidebar.classList.add('sidebar-visible');
+        overlay.classList.remove('hidden');
+      } else {
+        closeSidebar();
+      }
+    }
+
+    function closeSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebarOverlay');
+      sidebar.classList.add('sidebar-collapsed');
+      sidebar.classList.remove('sidebar-visible');
+      overlay.classList.add('hidden');
+    }
+
+    document.getElementById('toggleSidebar').addEventListener('click', toggleSidebar);
+    document.getElementById('sidebarOverlay').addEventListener('click', closeSidebar);
+
     document.getElementById('searchInput').addEventListener('input', (e) => {
       const query = e.target.value.toLowerCase();
       const buttons = document.querySelectorAll('#servicesList button');
@@ -547,7 +617,6 @@
       });
     });
 
-    // Toggle table
     document.getElementById('toggleTable').addEventListener('click', () => {
       showAllHistory = !showAllHistory;
       if (currentService) {
@@ -555,7 +624,8 @@
       }
     });
 
-    // Init
+    document.getElementById('clearFilter').addEventListener('click', clearFilter);
+
     refresh();
     setInterval(refresh, 30 * 1000);
   </script>
