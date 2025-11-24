@@ -100,9 +100,11 @@
 
           <!-- Response Time Chart -->
           <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
-            <h3 class="text-lg font-semibold mb-4">响应时间趋势</h3>
-            <div class="h-64">
-              <canvas id="responseChart"></canvas>
+            <h3 class="text-lg font-semibold mb-4">响应时间趋势 (24小时)</h3>
+            <div class="overflow-x-auto">
+              <div style="min-width: 800px; height: 256px;">
+                <canvas id="responseChart"></canvas>
+              </div>
             </div>
           </div>
 
@@ -200,22 +202,68 @@
 
     function renderTimeline(history) {
       const timeline = document.getElementById('timeline');
-      const last24h = history.slice(-48); // Show last 48 checks
+      const now = new Date();
+      const hours = [];
       
-      timeline.innerHTML = last24h.map((h, idx) => {
-        const color = getStatusColor(h.status);
+      // Create 24 hourly buckets (from 24 hours ago to now)
+      for (let i = 23; i >= 0; i--) {
+        const hourStart = new Date(now.getTime() - i * 60 * 60 * 1000);
+        hourStart.setMinutes(0, 0, 0);
+        const hourEnd = new Date(hourStart.getTime() + 60 * 60 * 1000);
+        
+        // Find all checks in this hour
+        const checksInHour = history.filter(h => {
+          const checkTime = new Date(h.ts);
+          return checkTime >= hourStart && checkTime < hourEnd;
+        });
+        
+        hours.push({
+          start: hourStart,
+          end: hourEnd,
+          checks: checksInHour
+        });
+      }
+      
+      timeline.innerHTML = hours.map((hour, idx) => {
+        let color, status, displayText;
+        
+        if (hour.checks.length === 0) {
+          // No data - assume green
+          color = 'bg-green-500';
+          status = '无数据 (默认在线)';
+          displayText = '✓';
+        } else {
+          const okCount = hour.checks.filter(c => c.status === 'ok').length;
+          const total = hour.checks.length;
+          const okRate = okCount / total;
+          
+          if (okRate === 1) {
+            color = 'bg-green-500';
+            status = '全部在线';
+            displayText = '✓';
+          } else if (okRate > 0) {
+            color = 'bg-yellow-500';
+            status = '部分故障';
+            displayText = '!';
+          } else {
+            color = 'bg-red-500';
+            status = '全部故障';
+            displayText = '✕';
+          }
+        }
+        
         return `
           <div 
-            class="flex-1 min-w-[12px] h-12 ${color.dot} rounded cursor-pointer hover:opacity-80 transition-opacity"
-            onmouseenter="showTooltip(event, ${idx})"
+            class="flex-1 min-w-[32px] h-12 ${color} rounded-lg cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center text-white text-sm font-semibold"
+            onmouseenter="showHourTooltip(event, ${idx})"
             onmouseleave="hideTooltip()"
             data-idx="${idx}"
-          ></div>
+          >${displayText}</div>
         `;
       }).join('');
 
-      // Store history for tooltip
-      timeline.dataset.history = JSON.stringify(last24h);
+      // Store hours data for tooltip
+      timeline.dataset.hours = JSON.stringify(hours);
     }
 
     function showTooltip(event, idx) {
@@ -240,13 +288,58 @@
       tooltip.style.top = (rect.top - tooltip.offsetHeight - 8) + 'px';
     }
 
+    function showHourTooltip(event, idx) {
+      const timeline = document.getElementById('timeline');
+      const hours = JSON.parse(timeline.dataset.hours || '[]');
+      const hour = hours[idx];
+      if (!hour) return;
+
+      const tooltip = document.getElementById('tooltip');
+      const content = document.getElementById('tooltipContent');
+      
+      const startTime = new Date(hour.start).toLocaleString('zh-CN', { 
+        month: 'numeric', 
+        day: 'numeric', 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+      
+      let checksInfo = '';
+      if (hour.checks.length === 0) {
+        checksInfo = '<div class="text-green-300">无检测数据 (默认在线)</div>';
+      } else {
+        const okCount = hour.checks.filter(c => c.status === 'ok').length;
+        const total = hour.checks.length;
+        checksInfo = `
+          <div>检测次数: ${total}</div>
+          <div>成功: ${okCount} | 失败: ${total - okCount}</div>
+          <div>在线率: ${Math.round((okCount / total) * 100)}%</div>
+        `;
+      }
+      
+      content.innerHTML = `
+        <div class="font-semibold mb-1">${startTime}</div>
+        ${checksInfo}
+      `;
+
+      tooltip.classList.remove('hidden');
+      const rect = event.target.getBoundingClientRect();
+      const tooltipWidth = 200;
+      tooltip.style.left = Math.min(rect.left, window.innerWidth - tooltipWidth - 10) + 'px';
+      tooltip.style.top = (rect.top - tooltip.offsetHeight - 8) + 'px';
+    }
+
     function hideTooltip() {
       document.getElementById('tooltip').classList.add('hidden');
     }
 
     function renderChart(history) {
       const ctx = document.getElementById('responseChart');
-      const last48 = history.slice(-48);
+      
+      // Filter last 24 hours
+      const now = new Date();
+      const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const last24h = history.filter(h => new Date(h.ts) >= twentyFourHoursAgo);
       
       if (chartInstance) {
         chartInstance.destroy();
@@ -255,26 +348,54 @@
       chartInstance = new Chart(ctx, {
         type: 'line',
         data: {
-          labels: last48.map(h => new Date(h.ts).toLocaleTimeString()),
+          labels: last24h.map(h => {
+            const date = new Date(h.ts);
+            return date.toLocaleString('zh-CN', { 
+              month: 'numeric',
+              day: 'numeric',
+              hour: '2-digit', 
+              minute: '2-digit'
+            });
+          }),
           datasets: [{
             label: '响应时间 (ms)',
-            data: last48.map(h => h.rtt),
+            data: last24h.map(h => h.rtt),
             borderColor: '#3b82f6',
             backgroundColor: 'rgba(59, 130, 246, 0.1)',
             tension: 0.4,
             fill: true,
-            pointRadius: 3,
-            pointHoverRadius: 6
+            pointRadius: 4,
+            pointHoverRadius: 7,
+            pointBackgroundColor: last24h.map(h => h.status === 'ok' ? '#3b82f6' : '#ef4444'),
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2
           }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          interaction: {
+            intersect: false,
+            mode: 'index'
+          },
           plugins: {
             legend: { display: false },
             tooltip: {
               callbacks: {
-                label: (context) => context.parsed.y ? `${context.parsed.y} ms` : 'TIMEOUT'
+                title: (items) => {
+                  const idx = items[0].dataIndex;
+                  const h = last24h[idx];
+                  return new Date(h.ts).toLocaleString('zh-CN');
+                },
+                label: (context) => {
+                  const h = last24h[context.dataIndex];
+                  if (!h.rtt) return '响应: TIMEOUT';
+                  return [
+                    `响应: ${h.rtt} ms`,
+                    `状态: ${h.status.toUpperCase()}`,
+                    `HTTP: ${h.http || '—'}`
+                  ];
+                }
               }
             }
           },
@@ -283,10 +404,23 @@
               beginAtZero: true,
               min: 0,
               max: 500,
-              ticks: { callback: (value) => value + ' ms' }
+              ticks: { 
+                callback: (value) => value + ' ms',
+                stepSize: 100
+              },
+              grid: {
+                color: '#f1f5f9'
+              }
             },
             x: {
-              ticks: { maxTicksLimit: 12 }
+              ticks: { 
+                maxRotation: 45,
+                minRotation: 45,
+                font: { size: 10 }
+              },
+              grid: {
+                display: false
+              }
             }
           }
         }
@@ -300,9 +434,18 @@
       
       tbody.innerHTML = toShow.map(h => {
         const color = getStatusColor(h.status);
+        const localTime = new Date(h.ts).toLocaleString('zh-CN', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+        
         return `
           <tr class="hover:bg-gray-50">
-            <td class="py-3 px-4">${new Date(h.ts).toLocaleString()}</td>
+            <td class="py-3 px-4">${localTime}</td>
             <td class="py-3 px-4">
               <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium ${color.bg} ${color.text}">
                 ${h.status.toUpperCase()}
@@ -371,7 +514,19 @@
 
     async function refresh() {
       currentData = await fetchStatus();
-      document.getElementById('updated').textContent = currentData.updatedAt ? new Date(currentData.updatedAt).toLocaleString() : '—';
+      
+      // Format time in user's timezone
+      const updateTime = currentData.updatedAt ? 
+        new Date(currentData.updatedAt).toLocaleString('zh-CN', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        }) : '—';
+      
+      document.getElementById('updated').textContent = updateTime;
       document.getElementById('count').textContent = (currentData.services || []).length;
       
       renderServicesList(currentData);
