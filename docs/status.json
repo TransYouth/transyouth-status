@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-01-17T14:44:09.041Z",
+  "updatedAt": "2026-01-17T14:56:08.024Z",
   "services": [
     {
       "id": "site",
@@ -382,6 +382,13 @@
           "status": "ok",
           "http": 200,
           "rtt": 190,
+          "note": "OK"
+        },
+        {
+          "ts": "2026-01-17T14:56:08.024Z",
+          "status": "ok",
+          "http": 200,
+          "rtt": 255,
           "note": "OK"
         }
       ]
