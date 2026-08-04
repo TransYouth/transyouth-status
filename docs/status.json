@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-08-04T15:14:51.349Z",
+  "updatedAt": "2026-08-04T17:07:52.428Z",
   "services": [
     {
       "id": "site",
@@ -88,6 +88,13 @@
           "status": "degraded",
           "http": 403,
           "rtt": 96,
+          "note": "HTTP 403"
+        },
+        {
+          "ts": "2026-08-04T17:07:52.427Z",
+          "status": "degraded",
+          "http": 403,
+          "rtt": 121,
           "note": "HTTP 403"
         }
       ]
