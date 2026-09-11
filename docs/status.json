@@ -1,18 +1,11 @@
 {
-  "updatedAt": "2026-09-11T15:02:08.074Z",
+  "updatedAt": "2026-09-11T18:25:35.288Z",
   "services": [
     {
       "id": "site",
       "name": "跨青年 - 网站",
       "url": "https://transyouth.xyz",
       "history": [
-        {
-          "ts": "2026-09-10T15:12:37.534Z",
-          "status": "degraded",
-          "http": 403,
-          "rtt": 628,
-          "note": "HTTP 403"
-        },
         {
           "ts": "2026-09-10T18:31:14.944Z",
           "status": "degraded",
@@ -60,6 +53,13 @@
           "status": "degraded",
           "http": 403,
           "rtt": 337,
+          "note": "HTTP 403"
+        },
+        {
+          "ts": "2026-09-11T18:25:35.288Z",
+          "status": "degraded",
+          "http": 403,
+          "rtt": 233,
           "note": "HTTP 403"
         }
       ]
